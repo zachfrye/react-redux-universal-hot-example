@@ -3,7 +3,6 @@ import React, { Component } from 'react';
 import PropTypes from 'prop-types';
 import { connect } from 'react-redux';
 import { withRouter } from 'react-router';
-import { push } from 'react-router-redux';
 import { renderRoutes } from 'react-router-config';
 import { provideHooks } from 'redial';
 import { IndexLinkContainer, LinkContainer } from 'react-router-bootstrap';
@@ -14,7 +13,7 @@ import Alert from 'react-bootstrap/lib/Alert';
 import Helmet from 'react-helmet';
 import qs from 'qs';
 import { isLoaded as isInfoLoaded, load as loadInfo } from 'redux/modules/info';
-import { isLoaded as isAuthLoaded, load as loadAuth, logout } from 'redux/modules/auth';
+import { isLoaded as isAuthLoaded, load as loadAuth, logout as logoutAction } from 'redux/modules/auth';
 import { Notifs, InfoBar } from 'components';
 import config from 'config';
 
@@ -33,10 +32,10 @@ import config from 'config';
     notifs: state.notifs,
     user: state.auth.user
   }),
-  { logout, pushState: push }
+  { logout: logoutAction }
 )
 @withRouter
-export default class App extends Component {
+class App extends Component {
   static propTypes = {
     route: PropTypes.objectOf(PropTypes.any).isRequired,
     location: PropTypes.objectOf(PropTypes.any).isRequired,
@@ -46,17 +45,25 @@ export default class App extends Component {
     notifs: PropTypes.shape({
       global: PropTypes.array
     }).isRequired,
-    logout: PropTypes.func.isRequired,
-    pushState: PropTypes.func.isRequired
+    logout: PropTypes.func.isRequired
   };
 
   static defaultProps = {
     user: null
   };
 
-  static contextTypes = {
-    store: PropTypes.object.isRequired
+  state = {
+    user: this.props.user, // eslint-disable-line react/destructuring-assignment
+    prevProps: this.props // eslint-disable-line react/no-unused-state
   };
+
+  componentDidUpdate(prevProps) {
+    const { location } = this.props;
+
+    if (location.pathname !== prevProps.location.pathname) {
+      window.scrollTo(0, 0);
+    }
+  }
 
   static getDerivedStateFromProps(props, state) {
     const { prevProps } = state;
@@ -65,33 +72,24 @@ export default class App extends Component {
 
     if (!prevProps.user && props.user) {
       const query = qs.parse(props.location.search, { ignoreQueryPrefix: true });
-      props.pushState(query.redirect || '/login-success');
+      props.history.push(query.redirect || '/login-success');
     } else if (prevProps.user && !props.user) {
       // logout
-      props.pushState('/');
+      props.history.push('/');
     }
 
     return {
+      user,
       // Store the previous props in state
-      prevProps: props,
-      user
+      prevProps: props
     };
   }
 
-  state = {
-    prevProps: this.props, // eslint-disable-line react/no-unused-state
-    user: this.props.user
-  };
-
-  componentDidUpdate(prevProps) {
-    if (this.props.location !== prevProps.location) {
-      window.scrollTo(0, 0);
-    }
-  }
-
   handleLogout = event => {
+    const { logout } = this.props;
+
     event.preventDefault();
-    this.props.logout();
+    logout();
   };
 
   render() {
@@ -181,9 +179,12 @@ export default class App extends Component {
             rel="noopener noreferrer"
           >
             on Github
-          </a>.
+          </a>
+          .
         </div>
       </div>
     );
   }
 }
+
+export default App;

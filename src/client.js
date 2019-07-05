@@ -1,14 +1,14 @@
 /**
  * THIS IS THE ENTRY POINT FOR THE CLIENT, JUST LIKE server.js IS THE ENTRY POINT FOR THE SERVER.
  */
-import 'babel-polyfill';
-import pick from 'lodash/pick';
+import 'core-js/stable';
+import 'regenerator-runtime/runtime';
 import React from 'react';
 import ReactDOM from 'react-dom';
-import { ConnectedRouter } from 'react-router-redux';
+import { Router } from 'react-router';
 import { renderRoutes } from 'react-router-config';
 import { trigger } from 'redial';
-import createBrowserHistory from 'history/createBrowserHistory';
+import { createBrowserHistory } from 'history';
 import Loadable from 'react-loadable';
 import { AppContainer as HotEnabler } from 'react-hot-loader';
 import { getStoredState } from 'redux-persist';
@@ -19,11 +19,16 @@ import apiClient from 'helpers/apiClient';
 import routes from 'routes';
 import isOnline from 'utils/isOnline';
 import asyncMatchRoutes from 'utils/asyncMatchRoutes';
-import { ReduxAsyncConnect, Provider } from 'components';
+import { RouterTrigger, Provider } from 'components';
+import NProgress from 'nprogress';
 
 const persistConfig = {
-  key: 'primary',
+  key: 'root',
   storage: localForage,
+  stateReconciler(inboundState, originalState) {
+    // Ignore state from cookies, only use preloadedState from window object
+    return originalState;
+  },
   whitelist: ['auth', 'info', 'chat']
 };
 
@@ -51,7 +56,7 @@ function initSocket() {
 initSocket();
 
 (async () => {
-  const storedData = await getStoredState(persistConfig);
+  const preloadedState = await getStoredState(persistConfig);
   const online = window.__data ? true : await isOnline();
 
   if (online) {
@@ -60,23 +65,21 @@ initSocket();
   }
 
   const history = createBrowserHistory();
-  const data = {
-    ...storedData,
-    ...window.__data,
-    ...pick(storedData, [
-      /* data always from store */
-    ]),
-    online
-  };
   const store = createStore({
     history,
-    data,
+    data: {
+      ...preloadedState,
+      ...window.__data,
+      online
+    },
     helpers: providers,
     persistConfig
   });
 
-  const hydrate = async _routes => {
-    const { components, match, params } = await asyncMatchRoutes(_routes, history.location.pathname);
+  const triggerHooks = async (_routes, pathname) => {
+    NProgress.start();
+
+    const { components, match, params } = await asyncMatchRoutes(_routes, pathname);
     const triggerLocals = {
       ...providers,
       store,
@@ -86,32 +89,48 @@ initSocket();
       location: history.location
     };
 
-    await trigger('fetch', components, triggerLocals);
+    await trigger('inject', components, triggerLocals);
+
+    // Don't fetch data for initial route, server has already done the work:
+    if (window.__PRELOADED__) {
+      // Delete initial data so that subsequent data fetches can occur:
+      delete window.__PRELOADED__;
+    } else {
+      // Fetch mandatory data dependencies for 2nd route change onwards:
+      await trigger('fetch', components, triggerLocals);
+    }
     await trigger('defer', components, triggerLocals);
 
-    ReactDOM.hydrate(
+    NProgress.done();
+  };
+
+  const hydrate = _routes => {
+    const element = (
       <HotEnabler>
         <Provider store={store} {...providers}>
-          <ConnectedRouter history={history}>
-            <ReduxAsyncConnect routes={_routes} store={store} helpers={providers}>
-              {renderRoutes(_routes)}
-            </ReduxAsyncConnect>
-          </ConnectedRouter>
+          <Router history={history}>
+            <RouterTrigger trigger={pathname => triggerHooks(_routes, pathname)}>{renderRoutes(_routes)}</RouterTrigger>
+          </Router>
         </Provider>
-      </HotEnabler>,
-      dest
+      </HotEnabler>
     );
+
+    if (dest.hasChildNodes()) {
+      ReactDOM.hydrate(element, dest);
+    } else {
+      ReactDOM.render(element, dest);
+    }
   };
 
   await Loadable.preloadReady();
 
-  await hydrate(routes);
+  hydrate(routes);
 
   // Hot reload
   if (module.hot) {
     module.hot.accept('./routes', () => {
       const nextRoutes = require('./routes');
-      hydrate(nextRoutes).catch(err => {
+      hydrate(nextRoutes.__esModule ? nextRoutes.default : nextRoutes).catch(err => {
         console.error('Error on routes reload:', err);
       });
     });
@@ -120,24 +139,6 @@ initSocket();
   // Server-side rendering check
   if (process.env.NODE_ENV !== 'production') {
     window.React = React; // enable debugger
-
-    if (!dest || !dest.firstChild || !dest.firstChild.attributes || !dest.firstChild.attributes['data-reactroot']) {
-      console.error('Server-side React render was discarded.\n' +
-          'Make sure that your initial render does not contain any client-side code.');
-    }
-  }
-
-  // Dev tools
-  if (__DEVTOOLS__ && !window.devToolsExtension) {
-    const devToolsDest = document.createElement('div');
-    window.document.body.insertBefore(devToolsDest, null);
-    const DevTools = require('./containers/DevTools/DevTools');
-    ReactDOM.hydrate(
-      <Provider store={store}>
-        <DevTools />
-      </Provider>,
-      devToolsDest
-    );
   }
 
   // Service worker

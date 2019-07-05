@@ -38,8 +38,8 @@ const Html = ({
         <meta name="apple-mobile-web-app-title" content="React Hot" />
         <meta name="theme-color" content="#3677dd" />
         {/* styles (will be present only in production with webpack extract text plugin) */}
-        {assets.styles &&
-          Object.keys(assets.styles).map(style => (
+        {assets.styles
+          && Object.keys(assets.styles).map(style => (
             <link
               href={assets.styles[style]}
               key={style}
@@ -59,11 +59,12 @@ const Html = ({
         <div id="content" dangerouslySetInnerHTML={{ __html: content }} />
         {store && (
           <script
-            dangerouslySetInnerHTML={{ __html: `window.__data=${serialize(store.getState())};` }}
+            dangerouslySetInnerHTML={{
+              __html: `window.__PRELOADED__=true;window.__data=${serialize(store.getState())};`
+            }}
             charSet="UTF-8"
           />
         )}
-        {__DLLS__ && <script key="dlls__vendor" src="/dist/dlls/dll__vendor.js" charSet="UTF-8" />}
         {assets.javascript && <script src={assets.javascript.main} charSet="UTF-8" />}
         {bundles.map(bundle => bundle && <script src={config.assetsPath + bundle.file} key={bundle.id} />)}
 

@@ -7,23 +7,25 @@ import FacebookTokenStrategy from 'passport-facebook-token';
 
 function populateUser() {
   return context => {
-    context.result.user = context.params.user;
+    const { result, params } = context;
+
+    result.user = params.user;
   };
 }
 
-export default function authenticationService() {
-  const app = this;
-
+export default function authenticationService(app) {
   const config = app.get('config').auth;
 
   app
     .configure(auth(config))
     .configure(jwt())
     .configure(local()) // .configure(oauth1()) // TODO twitter example
-    .configure(oauth2({
-      name: 'facebook', // if the name differs from your config key you need to pass your config options explicitly
-      Strategy: FacebookTokenStrategy
-    }));
+    .configure(
+      oauth2({
+        name: 'facebook', // if the name differs from your config key you need to pass your config options explicitly
+        Strategy: FacebookTokenStrategy
+      })
+    );
 
   app.service('authentication').hooks({
     before: {
